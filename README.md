@@ -1,0 +1,2 @@
+# TradingPlatform
+DB fianl project

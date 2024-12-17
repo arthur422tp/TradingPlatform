@@ -1,0 +1,68 @@
+name: MySQL Marketplace CI/CD Workflow
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]  # 支援 Linux 與 Windows
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: marketplace_db
+          MYSQL_USER: dev
+          MYSQL_PASSWORD: devpass
+        ports:
+          - 3306:3306
+        options: > 
+          --health-cmd="mysqladmin ping --silent" 
+          --health-interval=10s 
+          --health-timeout=5s 
+          --health-retries=3
+
+    steps:
+      - name: 檢出代碼
+        uses: actions/checkout@v2
+
+      - name: 設置環境 (Linux/Windows)
+        run: |
+          echo "正在設置開發環境..."
+          if [ "${{ matrix.os }}" == "ubuntu-latest" ]; then
+            sudo apt-get install -y mysql-client
+          else
+            choco install mysql
+          fi
+
+      - name: 檢查 MySQL 連線
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u dev -pdevpass -e "SHOW DATABASES;"
+
+      - name: 執行資料庫遷移
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u dev -pdevpass marketplace_db < migrations/init.sql
+
+      - name: 執行自動化測試
+        run: |
+          echo "運行測試"
+          python manage.py test
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出代碼
+        uses: actions/checkout@v2
+
+      - name: 部署應用程式
+        run: |
+          echo "正在部署二手交易平台..."
+          docker-compose up -d --build
